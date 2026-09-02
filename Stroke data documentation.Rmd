@@ -1,0 +1,167 @@
+---
+title: "Data management"
+author: "Suzan Nakasendwa"
+date: "Last modified: 2th Sept 2026"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: false
+  word_document: 
+    toc: true
+    fig_width: 7
+    fig_height: 5
+  pdf_document:
+    toc: true
+editor_options: 
+  chunk_output_type: console
+---
+
+
+<style>
+h1.title {text-align: center;margin-bottom: 30px;}
+h4.author {text-align: center;margin-top: 10px;margin-bottom: 20px;}
+h4.date {text-align: center;margin-top: 10px;margin-bottom: 40px;}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      comment = NA,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+
+```{r, include=FALSE}
+
+setwd("G:/My Drive/PhD/Manuscripts/4. Completeness stroke data/Raw datasets")
+
+library(readxl)
+Kiruddu = read_excel("Kiruddu_Patient_data.xlsx")
+Mulago = read_excel("Mulago_Patient_data.xlsx")
+Mbarara = read_excel("Mbarara_Patient_data.xlsx")
+Mbale = read_excel("Mbale_Patient_data.xlsx")
+Lubaga = read_excel("Lubaga_Patient_data.xlsx")
+
+```
+
+
+```{r, include=FALSE}
+# Sorting variable names
+library(dplyr)
+library(tidyr)
+
+setdiff(names(Kiruddu), names(Mulago))
+setdiff(names(Mulago), names(Kiruddu))
+
+Kiruddu$`Mentally unstable` <- NA
+any(is.na(Kiruddu$`Date of admission`))
+
+Kiruddu = Kiruddu %>%
+  select(-c(`Living or working in areas with air pollution`,
+            `Physical activity`,
+            `Date of arrival at the hospital`,
+            `Cardivascular medications`,
+            Antihypertensives))
+
+merged = bind_rows(Lubaga, Kiruddu, Mulago, Mbarara, Mbale)
+
+merged = merged %>%
+  mutate(`Presenting Symptoms` = if_else(
+      if_any(c(Weakness, `Speech disturbance`, `Vision loss`,
+               Headache, Fever, `Inability to lift or touch`,
+               `Uncordinated speech`, `Inability to walk`,
+               `Facial palsy`, `Loss of consciousness`),
+             ~ . == "Yes"), "Yes", "No"))
+
+
+merged = merged %>%
+  mutate(`Vital signs` = if_else(
+      rowSums(!is.na(
+        across(c(`Systolic blood pressure`,
+               `Diastolic blood pressure`, `Heart rate`,
+               `Respiratory rate`, Temperature,
+               `Oxgyen saturation`)))) >= 0, "Yes", "No"))
+
+merged = merged %>%
+  mutate(`Laboratory findings` = if_else(
+      rowSums(!is.na(
+        across(c(Hemoglobin, Platelets,
+                 `(International Normalized Ratio (INR)`,
+                 `Prothrombin Time (PT)`,
+                 `Activated Partial Thromboplastin Time (aPTT)`,
+                 `Blood glucose (mg/dL)`,
+                 `Serum Creatinine`,
+                 `Estimated Glomerular Filtration Rate (eGFR)`,
+                 `Cardiac Enzymes (Troponin) (ng/mL)`,
+                 `Low-Density Lipoprotein (LDL) (mg/dL)`,
+                 `High-Density Lipoprotein (HDL) (mg/dL)`,
+                 `Total Cholesterol (mg/dL)`,
+                 `Triglycerides (mg/dL)`)))) >= 0, "Yes", "No"))
+
+
+### Drop un necessary variables
+merged = merged %>%
+  select(`Study site`, `Age (years)`, Sex, District,
+         `Date of Symptom onset`, `Presenting Symptoms`,
+         `Transfer from another facility`, `Vital signs`,
+         `Glasgow Coma Scale (GCS) score`, Hypertension,
+         Diabetes, `HIV status`, `Smoking status`, `Alcohol use`,
+         `Family history of stroke`, `Recurrent stroke`,
+         `Laboratory findings`,
+         `Date of stroke diagnosis`, `Comments / Notes`) %>%
+  rename( "Functional status" = "Comments / Notes")
+
+```
+
+
+```{r}
+
+library(stringr)
+
+variable_order = c("Age (years)", "Sex", "District",
+                   "Date of Symptom onset",
+                   "Presenting Symptoms",
+                   "Transfer from another facility",
+                   "Vital signs",
+                   "Glasgow Coma Scale (GCS) score",
+                   "Hypertension", "Diabetes", "HIV status",
+                   "Smoking status", "Alcohol use",
+                   "Family history of stroke",
+                   "Recurrent stroke",
+                   "Laboratory findings",
+                   "Date of stroke diagnosis",
+                   "Functional status")
+
+table_missing = merged %>%
+  select(`Study site`, all_of(variable_order)) %>%
+  mutate(across(-`Study site`, as.character)) %>%
+  pivot_longer(cols = -`Study site`, names_to = "Variable",
+               values_to = "value") %>%
+  mutate(filled = !is.na(value) & str_trim(value) != "") %>%
+  group_by(`Study site`, Variable) %>%
+  summarise(n = sum(filled), total = n(),
+            percent = (n / total) * 100, .groups = "drop") %>%
+  mutate(result = paste0(n, " (", round(percent, 1), ")")) %>%
+  select(Variable, `Study site`, result) %>%
+  pivot_wider(names_from = `Study site`,
+              values_from = result) %>%
+  mutate(Variable = factor(Variable,
+                           levels = variable_order)) %>%
+  arrange(Variable) %>%
+  mutate(Variable = as.character(Variable)) %>%
+  mutate(Category = case_when(
+      Variable == "Age (years)" ~ "Patient demographics",
+      Variable == "Date of Symptom onset" ~ "Clinical presentation",
+      Variable == "Hypertension" ~ "Risk factors",
+      Variable == "Laboratory findings" ~ "Investigations",
+      Variable == "Date of stroke diagnosis" ~ "Outcomes",
+      TRUE ~ ""),.before = 1)
+
+library(knitr)
+kable(table_missing)
+
+```
+
+
